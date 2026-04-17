@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ask Standardmeat</title>
-<script src="https://alcdn.msauth.net/browser/2.32.0/js/msal-browser.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; display: flex; justify-content: center; padding: 2rem 1rem; min-height: 100vh; }
@@ -54,6 +54,7 @@
   .auth-screen p { color: #666; font-size: 14px; margin-bottom: 24px; }
   .signin-btn { background: #8B0000; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; }
   .signin-btn:hover { background: #6B0000; }
+  .signin-btn:disabled { background: #ccc; cursor: not-allowed; }
   .hidden { display: none; }
 </style>
 </head>
@@ -71,7 +72,7 @@
   <div id="authScreen" class="auth-screen">
     <h2>Sign in required</h2>
     <p>Please sign in with your Standard Meat Company account to continue.</p>
-    <button class="signin-btn" onclick="signIn()">Sign in with Microsoft</button>
+    <button class="signin-btn" id="signinBtn" onclick="signIn()" disabled>Loading...</button>
   </div>
 
   <div id="chatScreen" class="hidden">
@@ -110,20 +111,10 @@ const PROXY_URL = "https://ask-standardmeat-api-h0h6dwhngbhcfmhj.centralus-01.az
 const CLIENT_ID = "3c9917f8-8130-4f43-89b4-7fdafaa227b4";
 const TENANT_ID = "d8767a28-dd78-4839-8341-74b708064c70";
 
-const msalConfig = {
-  auth: {
-    clientId: CLIENT_ID,
-    authority: `https://login.microsoftonline.com/${TENANT_ID}`,
-    redirectUri: window.location.origin + window.location.pathname
-  },
-  cache: { cacheLocation: 'localStorage' }
-};
-
-const loginRequest = { scopes: [`api://${CLIENT_ID}/user_impersonation`, 'openid', 'profile'] };
-const tokenRequest = { scopes: [`${CLIENT_ID}/.default`] };
-
-let msalInstance;
+let msalInstance = null;
 let currentAccount = null;
+let isLoading = false;
+let conversationHistory = [];
 
 const SYSTEM_PROMPT = `You are the Standardmeat knowledge assistant with access to the Claude Pilot Workspace SharePoint library at https://standardmeatco.sharepoint.com/sites/ClaudePilot.
 
@@ -146,13 +137,33 @@ When answering:
 - Be conservative - say so if unsure rather than guessing
 - Help categorize and document scripts when asked`;
 
-let conversationHistory = [];
-let isLoading = false;
+async function waitForMsal() {
+  for (let i = 0; i < 50; i++) {
+    if (typeof msal !== 'undefined' && msal.PublicClientApplication) return true;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return false;
+}
 
 async function initAuth() {
+  const ready = await waitForMsal();
+  if (!ready) {
+    document.getElementById('signinBtn').textContent = 'Failed to load (refresh page)';
+    return;
+  }
+
+  const msalConfig = {
+    auth: {
+      clientId: CLIENT_ID,
+      authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+      redirectUri: window.location.origin + window.location.pathname
+    },
+    cache: { cacheLocation: 'localStorage' }
+  };
+
   msalInstance = new msal.PublicClientApplication(msalConfig);
   await msalInstance.initialize();
-  
+
   try {
     const response = await msalInstance.handleRedirectPromise();
     if (response) {
@@ -163,17 +174,27 @@ async function initAuth() {
   } catch (e) {
     console.error('Redirect handling error:', e);
   }
-  
+
   const accounts = msalInstance.getAllAccounts();
   if (accounts.length > 0) {
     currentAccount = accounts[0];
     showChatScreen();
+  } else {
+    const btn = document.getElementById('signinBtn');
+    btn.textContent = 'Sign in with Microsoft';
+    btn.disabled = false;
   }
 }
 
 async function signIn() {
+  if (!msalInstance) {
+    alert('Sign in not ready, please refresh the page.');
+    return;
+  }
   try {
-    await msalInstance.loginRedirect(loginRequest);
+    await msalInstance.loginRedirect({
+      scopes: [`api://${CLIENT_ID}/user_impersonation`]
+    });
   } catch (e) {
     console.error('Sign in error:', e);
     alert('Sign in failed: ' + e.message);
@@ -181,7 +202,7 @@ async function signIn() {
 }
 
 function signOut() {
-  msalInstance.logoutRedirect();
+  if (msalInstance) msalInstance.logoutRedirect();
 }
 
 function showChatScreen() {
@@ -198,8 +219,10 @@ async function getAccessToken() {
     });
     return response.accessToken;
   } catch (e) {
-    if (e instanceof msal.InteractionRequiredAuthError) {
-      await msalInstance.acquireTokenRedirect({ scopes: [`api://${CLIENT_ID}/user_impersonation`] });
+    if (e.name === 'InteractionRequiredAuthError') {
+      await msalInstance.acquireTokenRedirect({
+        scopes: [`api://${CLIENT_ID}/user_impersonation`]
+      });
     }
     throw e;
   }
@@ -278,7 +301,7 @@ async function sendMessage() {
     const token = await getAccessToken();
     const response = await fetch(PROXY_URL, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -289,7 +312,7 @@ async function sendMessage() {
     if (data.error) {
       const err = document.createElement('div');
       err.className = 'error-bubble';
-      err.textContent = 'Error: ' + data.error.message;
+      err.textContent = 'Error: ' + (data.error.message || JSON.stringify(data.error));
       document.getElementById('chatArea').appendChild(err);
     } else {
       const reply = data.content[0].text;
