@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ask Standardmeat</title>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; display: flex; justify-content: center; padding: 2rem 1rem; min-height: 100vh; }
@@ -12,6 +13,8 @@
   .header-logo { width: 48px; height: 48px; background: white; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #8B0000; font-size: 14px; }
   .header h1 { font-size: 22px; font-weight: 600; }
   .header p { font-size: 13px; opacity: 0.85; margin-top: 2px; }
+  .header-user { margin-left: auto; font-size: 12px; opacity: 0.85; text-align: right; }
+  .header-user a { color: white; text-decoration: underline; cursor: pointer; }
   .chat-area { background: white; border-left: 1px solid #e0e0e0; border-right: 1px solid #e0e0e0; min-height: 400px; max-height: 550px; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
   .message { display: flex; gap: 12px; align-items: flex-start; }
   .message.user { flex-direction: row-reverse; }
@@ -46,6 +49,12 @@
   @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
   .config-notice { font-size: 12px; color: #999; text-align: center; margin-top: 8px; }
   .error-bubble { background: #fff0f0; border: 1px solid #ffcccc; color: #8B0000; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin: 4px 0; }
+  .auth-screen { background: white; border: 1px solid #e0e0e0; border-radius: 0 0 12px 12px; padding: 4rem 2rem; text-align: center; }
+  .auth-screen h2 { font-size: 18px; margin-bottom: 12px; color: #333; }
+  .auth-screen p { color: #666; font-size: 14px; margin-bottom: 24px; }
+  .signin-btn { background: #8B0000; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; }
+  .signin-btn:hover { background: #6B0000; }
+  .hidden { display: none; }
 </style>
 </head>
 <body>
@@ -56,39 +65,65 @@
       <h1>Ask Standardmeat</h1>
       <p>Search across scripts, API docs, and integrations</p>
     </div>
+    <div class="header-user" id="userInfo"></div>
   </div>
 
-  <div class="chat-area" id="chatArea">
-    <div class="message ai">
-      <div class="avatar ai">AI</div>
-      <div class="bubble">
-        <p>Hello! I'm your Standardmeat knowledge assistant. I have access to:</p>
-        <ul>
-          <li><strong>Shabaka Scripts</strong> — 196 SQL &amp; automation scripts</li>
-          <li><strong>Aspen Webhooks</strong> — Canopy ERP API documentation</li>
-        </ul>
-        <p>Ask me anything about your systems, scripts, or integrations.</p>
+  <div id="authScreen" class="auth-screen">
+    <h2>Sign in required</h2>
+    <p>Please sign in with your Standard Meat Company account to continue.</p>
+    <button class="signin-btn" onclick="signIn()">Sign in with Microsoft</button>
+  </div>
+
+  <div id="chatScreen" class="hidden">
+    <div class="chat-area" id="chatArea">
+      <div class="message ai">
+        <div class="avatar ai">AI</div>
+        <div class="bubble">
+          <p>Hello! I'm your Standardmeat knowledge assistant. I have access to:</p>
+          <ul>
+            <li><strong>Shabaka Scripts</strong> &mdash; 196 SQL &amp; automation scripts</li>
+            <li><strong>Aspen Webhooks</strong> &mdash; Canopy ERP API documentation</li>
+          </ul>
+          <p>Ask me anything about your systems, scripts, or integrations.</p>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="input-area">
-    <div class="suggestions" id="suggestions">
-      <span class="suggestion" onclick="useSuggestion(this)">What does the Acct_Data_Export script do?</span>
-      <span class="suggestion" onclick="useSuggestion(this)">List all scripts that touch production databases</span>
-      <span class="suggestion" onclick="useSuggestion(this)">What Aspen API endpoints are available?</span>
-      <span class="suggestion" onclick="useSuggestion(this)">Find any duplicate or overlapping scripts</span>
+    <div class="input-area">
+      <div class="suggestions" id="suggestions">
+        <span class="suggestion" onclick="useSuggestion(this)">What does the Acct_Data_Export script do?</span>
+        <span class="suggestion" onclick="useSuggestion(this)">List all scripts that touch production databases</span>
+        <span class="suggestion" onclick="useSuggestion(this)">What Aspen API endpoints are available?</span>
+        <span class="suggestion" onclick="useSuggestion(this)">Find any duplicate or overlapping scripts</span>
+      </div>
+      <div class="input-row">
+        <textarea id="userInput" placeholder="Ask about your scripts, APIs, or integrations..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button class="send" id="sendBtn" onclick="sendMessage()">Ask</button>
+      </div>
+      <p class="config-notice">Connected to Claude Pilot Workspace &bull; Powered by Claude</p>
     </div>
-    <div class="input-row">
-      <textarea id="userInput" placeholder="Ask about your scripts, APIs, or integrations..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-      <button class="send" id="sendBtn" onclick="sendMessage()">Ask</button>
-    </div>
-    <p class="config-notice">Connected to Claude Pilot Workspace &bull; Powered by Claude</p>
   </div>
 </div>
 
 <script>
 const PROXY_URL = "https://ask-standardmeat-api-h0h6dwhngbhcfmhj.centralus-01.azurewebsites.net/api/claude-proxy";
+const CLIENT_ID = "3c9917f8-8130-4f43-89b4-7fdafaa227b4";
+const TENANT_ID = "d8767a28-dd78-4839-8341-74b708064c70";
+
+const msalConfig = {
+  auth: {
+    clientId: CLIENT_ID,
+    authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+    redirectUri: window.location.origin + window.location.pathname
+  },
+  cache: { cacheLocation: 'localStorage' }
+};
+
+const loginRequest = { scopes: [`api://${CLIENT_ID}/user_impersonation`, 'openid', 'profile'] };
+const tokenRequest = { scopes: [`${CLIENT_ID}/.default`] };
+
+let msalInstance;
+let currentAccount = null;
 
 const SYSTEM_PROMPT = `You are the Standardmeat knowledge assistant with access to the Claude Pilot Workspace SharePoint library at https://standardmeatco.sharepoint.com/sites/ClaudePilot.
 
@@ -113,6 +148,62 @@ When answering:
 
 let conversationHistory = [];
 let isLoading = false;
+
+async function initAuth() {
+  msalInstance = new msal.PublicClientApplication(msalConfig);
+  await msalInstance.initialize();
+  
+  try {
+    const response = await msalInstance.handleRedirectPromise();
+    if (response) {
+      currentAccount = response.account;
+      showChatScreen();
+      return;
+    }
+  } catch (e) {
+    console.error('Redirect handling error:', e);
+  }
+  
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length > 0) {
+    currentAccount = accounts[0];
+    showChatScreen();
+  }
+}
+
+async function signIn() {
+  try {
+    await msalInstance.loginRedirect(loginRequest);
+  } catch (e) {
+    console.error('Sign in error:', e);
+    alert('Sign in failed: ' + e.message);
+  }
+}
+
+function signOut() {
+  msalInstance.logoutRedirect();
+}
+
+function showChatScreen() {
+  document.getElementById('authScreen').classList.add('hidden');
+  document.getElementById('chatScreen').classList.remove('hidden');
+  document.getElementById('userInfo').innerHTML = `${currentAccount.username}<br><a onclick="signOut()">Sign out</a>`;
+}
+
+async function getAccessToken() {
+  try {
+    const response = await msalInstance.acquireTokenSilent({
+      scopes: [`api://${CLIENT_ID}/user_impersonation`],
+      account: currentAccount
+    });
+    return response.accessToken;
+  } catch (e) {
+    if (e instanceof msal.InteractionRequiredAuthError) {
+      await msalInstance.acquireTokenRedirect({ scopes: [`api://${CLIENT_ID}/user_impersonation`] });
+    }
+    throw e;
+  }
+}
 
 function autoResize(el) {
   el.style.height = 'auto';
@@ -184,9 +275,13 @@ async function sendMessage() {
   document.getElementById('sendBtn').disabled = true;
   const typingEl = addMessage('ai', '', true);
   try {
+    const token = await getAccessToken();
     const response = await fetch(PROXY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, system: SYSTEM_PROMPT, messages: conversationHistory })
     });
     const data = await response.json();
@@ -205,12 +300,14 @@ async function sendMessage() {
     typingEl.remove();
     const errDiv = document.createElement('div');
     errDiv.className = 'error-bubble';
-    errDiv.textContent = 'Connection error. Please try again.';
+    errDiv.textContent = 'Connection error: ' + err.message;
     document.getElementById('chatArea').appendChild(errDiv);
   }
   isLoading = false;
   document.getElementById('sendBtn').disabled = false;
 }
+
+initAuth();
 </script>
 </body>
 </html>
