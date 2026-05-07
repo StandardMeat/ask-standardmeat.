@@ -72,9 +72,9 @@ module.exports = async function (context, req) {
         const allFiles = await listAllFiles();
         context.log('Total files found:', allFiles.length);
 
-        const stopWords = new Set(['that','this','with','from','find','show','what','have','will','where','when','which','about','your','they','them','there','their','would','could','should','please','refer','look','tell','give','make','need','want','help','using','sends','pulling','scripts','script','file','files','process','actually','looking','supposed','then','another']);
-        const recentMessages = req.body.messages.filter(m => m.role === 'user').slice(-3).map(m => m.content).join(' ');
-        let keywords = (recentMessages.toLowerCase().match(/[a-z_]{2,}/g) || []).filter(w => !stopWords.has(w) && w.length >= 2);
+        const stopWords = new Set(['that','this','with','from','find','show','what','have','will','where','when','which','about','your','they','them','there','their','would','could','should','please','refer','look','tell','give','make','need','want','help','using','sends','pulling','scripts','script','file','files','process','actually','looking','supposed','then','another','how','many','are','in','on','at','of','an','the','do','does','did','was','were','been','being','can','also','any','all','some','our']);
+        const latestMessage = req.body.messages.filter(m => m.role === 'user').slice(-1).map(m => m.content).join(' ');
+        let keywords = (latestMessage.toLowerCase().match(/[a-z_]{2,}/g) || []).filter(w => !stopWords.has(w) && w.length >= 2);
         const expansions = {
             'accounts payable': ['ap'], 'accounts receivable': ['ar'], 'general ledger': ['gl'],
             'purchase order': ['po'], 'sales order': ['so'], 'inventory': ['inv'],
@@ -84,7 +84,7 @@ module.exports = async function (context, req) {
         };
         const expandedKeywords = new Set(keywords);
         for (const kw of keywords) if (expansions[kw]) expansions[kw].forEach(e => expandedKeywords.add(e));
-        const lowerText = recentMessages.toLowerCase();
+        const lowerText = latestMessage.toLowerCase();
         for (const phrase in expansions) {
             if (phrase.includes(' ') && lowerText.includes(phrase)) expansions[phrase].forEach(e => expandedKeywords.add(e));
         }
