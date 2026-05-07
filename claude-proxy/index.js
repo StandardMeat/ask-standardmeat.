@@ -1,3 +1,7 @@
+const mammoth = require('mammoth');
+const XLSX = require('xlsx');
+const pdfParse = require('pdf-parse');
+
 module.exports = async function (context, req) {
     context.res = {
         headers: {
@@ -117,13 +121,34 @@ module.exports = async function (context, req) {
 
         for (const file of topFiles) {
             try {
+                const ext = file.name.toLowerCase().split('.').pop();
                 const contentResponse = await fetch(
                     `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/items/${file.id}/content`,
                     { headers: { 'Authorization': `Bearer ${graphToken}` } }
                 );
-                const content = await contentResponse.text();
-                fileContents += `\n\n=== FILE: ${file.folderPath}/${file.name} ===\n${content.substring(0, 30000)}`;
-                context.log('Read file:', file.name, 'length:', content.length);
+
+                let textContent = '';
+
+                if (ext === 'docx') {
+                    const buffer = Buffer.from(await contentResponse.arrayBuffer());
+                    const result = await mammoth.extractRawText({ buffer });
+                    textContent = result.value;
+                } else if (ext === 'xlsx' || ext === 'xls') {
+                    const buffer = Buffer.from(await contentResponse.arrayBuffer());
+                    const workbook = XLSX.read(buffer, { type: 'buffer' });
+                    textContent = workbook.SheetNames.map(name => {
+                        return `Sheet: ${name}\n${XLSX.utils.sheet_to_csv(workbook.Sheets[name])}`;
+                    }).join('\n\n');
+                } else if (ext === 'pdf') {
+                    const buffer = Buffer.from(await contentResponse.arrayBuffer());
+                    const data = await pdfParse(buffer);
+                    textContent = data.text;
+                } else {
+                    textContent = await contentResponse.text();
+                }
+
+                fileContents += `\n\n=== FILE: ${file.folderPath}/${file.name} ===\n${textContent.substring(0, 30000)}`;
+                context.log('Read file:', file.name, 'type:', ext, 'length:', textContent.length);
             } catch (e) {
                 context.log('Error reading:', file.name, e.message);
             }
