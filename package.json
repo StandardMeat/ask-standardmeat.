@@ -1,0 +1,6 @@
+{
+    "name": "ask-standardmeat-api",
+    "version": "1.0.0",
+    "description": "Claude proxy for Ask Standardmeat SharePoint knowledge base",
+    "main": "claude-proxy/index.js"
+}
