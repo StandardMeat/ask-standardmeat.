@@ -73,8 +73,15 @@ module.exports = async function (context, req) {
         context.log('Total files found:', allFiles.length);
 
         const stopWords = new Set(['that','this','with','from','find','show','what','have','will','where','when','which','about','your','they','them','there','their','would','could','should','please','refer','look','tell','give','make','need','want','help','using','sends','pulling','scripts','script','file','files','process','actually','looking','supposed','then','another','how','many','are','in','on','at','of','an','the','do','does','did','was','were','been','being','can','also','any','all','some','our']);
-        const latestMessage = req.body.messages.filter(m => m.role === 'user').slice(-1).map(m => m.content).join(' ');
-        let keywords = (latestMessage.toLowerCase().match(/[a-z_]{2,}/g) || []).filter(w => !stopWords.has(w) && w.length >= 2);
+        const userMessages = req.body.messages.filter(m => m.role === 'user');
+        const latestMessage = userMessages.slice(-1).map(m => m.content).join(' ');
+        let primaryKeywords = (latestMessage.toLowerCase().match(/[a-z_]{2,}/g) || []).filter(w => !stopWords.has(w) && w.length >= 2);
+
+        // If the latest message has no substantive keywords (e.g. "yes", "ok", "do that one"),
+        // fall back to the last 3 messages so we know what they're referring to.
+        const searchText = primaryKeywords.length >= 2 ? latestMessage : userMessages.slice(-3).map(m => m.content).join(' ');
+        let keywords = (searchText.toLowerCase().match(/[a-z_]{2,}/g) || []).filter(w => !stopWords.has(w) && w.length >= 2);
+        context.log('Search source:', primaryKeywords.length >= 2 ? 'latest only' : 'last 3 messages');
         const expansions = {
             'accounts payable': ['ap'], 'accounts receivable': ['ar'], 'general ledger': ['gl'],
             'purchase order': ['po'], 'sales order': ['so'], 'inventory': ['inv'],
@@ -84,7 +91,7 @@ module.exports = async function (context, req) {
         };
         const expandedKeywords = new Set(keywords);
         for (const kw of keywords) if (expansions[kw]) expansions[kw].forEach(e => expandedKeywords.add(e));
-        const lowerText = latestMessage.toLowerCase();
+        const lowerText = searchText.toLowerCase();
         for (const phrase in expansions) {
             if (phrase.includes(' ') && lowerText.includes(phrase)) expansions[phrase].forEach(e => expandedKeywords.add(e));
         }
