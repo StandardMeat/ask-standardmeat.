@@ -99,21 +99,18 @@ module.exports = async function (context, req) {
         }).filter(f => f.score > 0).sort((a, b) => b.score - a.score);
         context.log('Matching files:', scoredFiles.length);
 
-        let fallbackFileList = '';
-        if (scoredFiles.length === 0) {
-            const filesByFolder = {};
-            for (const f of allFiles) {
-                const folder = f.folderPath || 'root';
-                if (!filesByFolder[folder]) filesByFolder[folder] = [];
-                filesByFolder[folder].push(f.name);
-            }
-            fallbackFileList = '\n\n=== AVAILABLE FILES (no keyword matches — suggest options to user) ===\n';
-            for (const folder in filesByFolder) {
-                fallbackFileList += `\n${folder}/:\n  ${filesByFolder[folder].slice(0, 50).join(', ')}`;
-                if (filesByFolder[folder].length > 50) fallbackFileList += ` (+${filesByFolder[folder].length - 50} more)`;
-            }
-            context.log('Using fallback file list (no matches found)');
+        // Always build complete file inventory grouped by folder
+        const filesByFolder = {};
+        for (const f of allFiles) {
+            const folder = f.folderPath || 'root';
+            if (!filesByFolder[folder]) filesByFolder[folder] = [];
+            filesByFolder[folder].push(f.name);
         }
+        let fileInventory = '\n\n=== COMPLETE FILE INVENTORY (all files in SharePoint library) ===\n';
+        for (const folder in filesByFolder) {
+            fileInventory += `\n${folder}/:\n  ${filesByFolder[folder].join(', ')}`;
+        }
+        context.log('File inventory built:', allFiles.length, 'files');
 
         let fileContents = '';
         const topFiles = scoredFiles.slice(0, 3);
@@ -155,15 +152,15 @@ module.exports = async function (context, req) {
         }
 
         const enhancedMessages = [...req.body.messages];
-        const contextBlock = fileContents
-            ? `Context from SharePoint files:${fileContents}\n\n---\n\n`
-            : (fallbackFileList ? `Context from SharePoint:${fallbackFileList}\n\n---\n\n` : '');
-        if (contextBlock) {
-            enhancedMessages[enhancedMessages.length - 1] = {
-                role: 'user',
-                content: `${contextBlock}User question: ${userMessage}`
-            };
+        let contextBlock = `Context from SharePoint:${fileInventory}\n\n`;
+        if (fileContents) {
+            contextBlock += `Detailed contents of files most relevant to your question:${fileContents}\n\n`;
         }
+        contextBlock += `---\n\n`;
+        enhancedMessages[enhancedMessages.length - 1] = {
+            role: 'user',
+            content: `${contextBlock}User question: ${userMessage}`
+        };
 
         const claudeBody = { ...req.body, messages: enhancedMessages };
         const response = await fetch('https://api.anthropic.com/v1/messages', {
