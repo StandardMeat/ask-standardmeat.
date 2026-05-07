@@ -60,4 +60,4 @@ jobs:
           app-name: 'ask-standardmeat-api'
           slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_584C5549576843BBA8E6F127582A5632 }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_5CF5345CAA714622918FFB6685B20E23 }}
